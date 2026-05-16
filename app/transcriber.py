@@ -56,12 +56,7 @@ def transcribe_pcm(audio: np.ndarray) -> str:
         beam_size=5,
         best_of=5,
         temperature=0.0,
-        vad_filter=audio.size >= SAMPLE_RATE * 2,
-        vad_parameters=dict(
-            min_silence_duration_ms=300,
-            speech_pad_ms=300,
-            threshold=0.35,
-        ),
+        vad_filter=False,
         condition_on_previous_text=True,
         initial_prompt="یہ اردو تقریر ہے۔",
     )

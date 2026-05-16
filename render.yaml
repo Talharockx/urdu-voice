@@ -12,3 +12,5 @@ services:
         value: cpu
       - key: WHISPER_COMPUTE_TYPE
         value: int8
+      - key: CHUNK_SECONDS
+        value: "1.8"

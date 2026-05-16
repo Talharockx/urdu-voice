@@ -82,12 +82,13 @@ async def transcribe_ws(websocket: WebSocket):
                 pcm_buffer.clear()
                 total_samples = 0
 
+                await websocket.send_json({"type": "processing"})
                 loop = asyncio.get_event_loop()
                 text = await loop.run_in_executor(None, transcribe_pcm, combined)
                 if text:
                     await websocket.send_json({"type": "transcript", "text": text, "final": True})
                 else:
-                    await websocket.send_json({"type": "listening"})
+                    await websocket.send_json({"type": "listening", "hint": "no_speech"})
 
             elif "text" in message and message["text"]:
                 payload = message["text"]

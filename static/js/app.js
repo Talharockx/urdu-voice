@@ -25,8 +25,12 @@ let animFrame = null;
 let pendingInterim = "";
 let langIndex = 0;
 let restartTimer = null;
+let serverReady = false;
+let readyWaiters = [];
+let listeningTicks = 0;
 
 const TARGET_SAMPLE_RATE = 16000;
+const SERVER_READY_TIMEOUT_MS = 120000;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const URDU_LANGS = ["ur-PK", "ur-IN", "ur", "hi-IN"];
 
@@ -247,55 +251,126 @@ function float32ToInt16(float32Array) {
   return int16;
 }
 
+function handleWsMessage(event) {
+  try {
+    const data = JSON.parse(event.data);
+    if (data.type === "ready") {
+      serverReady = true;
+      setBadge("online");
+      readyWaiters.splice(0).forEach((fn) => fn());
+    } else if (data.type === "transcript" && data.text) {
+      setInterim("");
+      appendText(data.text);
+      setStatus("Listening — speak in Urdu", true);
+      listeningTicks = 0;
+    } else if (data.type === "listening") {
+      listeningTicks += 1;
+      if (listeningTicks < 3) {
+        setStatus("Keep speaking Urdu (2+ seconds)…", true);
+      } else if (listeningTicks % 4 === 0) {
+        setStatus("Processing speech…", true);
+      }
+    } else if (data.type === "processing") {
+      setStatus("Processing…", true);
+    } else if (data.type === "error") {
+      setStatus(data.message || "Error");
+      showToast(data.message || "Error");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function connectWebSocket() {
   return new Promise((resolve, reject) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN && serverReady) {
       resolve(ws);
       return;
     }
-    ws = new WebSocket(getWsUrl());
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
-      setBadge("online");
-      resolve(ws);
-    };
-    ws.onmessage = (event) => {
+
+    serverReady = false;
+    listeningTicks = 0;
+
+    if (ws) {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === "transcript" && data.text) {
-          setInterim("");
-          appendText(data.text);
-          setStatus("Listening — speak in Urdu", true);
-        } else if (data.type === "listening") {
-          setStatus("Listening…", true);
-        } else if (data.type === "error") {
-          setStatus(data.message || "Error");
-          showToast(data.message || "Error");
-        }
+        ws.close();
       } catch {
         /* ignore */
       }
+    }
+
+    const timeout = setTimeout(() => {
+      reject(new Error("Cloud server took too long. Wait 1 minute and try again."));
+    }, SERVER_READY_TIMEOUT_MS);
+
+    const onReady = () => {
+      clearTimeout(timeout);
+      resolve(ws);
     };
+    readyWaiters.push(onReady);
+
+    ws = new WebSocket(getWsUrl());
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => setStatus("Connecting to cloud server…", true);
+
+    ws.onmessage = handleWsMessage;
+
     ws.onerror = () => {
+      clearTimeout(timeout);
+      readyWaiters.length = 0;
       setBadge("offline");
-      reject(new Error("WebSocket failed"));
+      reject(new Error("Cannot reach cloud server"));
     };
-    ws.onclose = () => setBadge("ready");
+
+    ws.onclose = () => {
+      serverReady = false;
+      if (isRecording) {
+        setStatus("Connection lost — tap mic again");
+        showToast("Connection lost");
+        stopServerRecording();
+      } else {
+        setBadge("ready");
+      }
+    };
   });
 }
 
+async function wakeServer() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), SERVER_READY_TIMEOUT_MS);
+    await fetch(`${API_BASE}/health`, { signal: ctrl.signal });
+    clearTimeout(t);
+  } catch {
+    /* websocket will retry */
+  }
+}
+
 async function startServerRecording() {
+  setStatus("Waking cloud server (first time ~1 min)…", true);
+  await wakeServer();
   await connectWebSocket();
+
   audioStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+    },
   });
 
-  audioContext = new AudioContext();
-  const source = audioContext.createMediaStreamSource(audioStream);
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 64;
-  source.connect(analyser);
+  audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
 
+  const source = audioContext.createMediaStreamSource(audioStream);
   pcmProcessor = audioContext.createScriptProcessor(4096, 1, 1);
   silentGain = audioContext.createGain();
   silentGain.gain.value = 0;
@@ -303,32 +378,44 @@ async function startServerRecording() {
   pcmProcessor.connect(silentGain);
   silentGain.connect(audioContext.destination);
 
+  isRecording = true;
+
   pcmProcessor.onaudioprocess = (event) => {
     if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
     const input = event.inputBuffer.getChannelData(0);
     const resampled = downsampleTo16k(input, audioContext.sampleRate);
-    ws.send(float32ToInt16(resampled).buffer);
+    if (resampled.length > 0) {
+      ws.send(float32ToInt16(resampled).buffer);
+    }
   };
 
-  isRecording = true;
   els.micBtn.classList.add("mic-btn--recording");
   els.micBtn.setAttribute("aria-pressed", "true");
   els.micBtn.querySelector(".mic-icon").hidden = true;
   els.micBtn.querySelector(".stop-icon").hidden = false;
   setBadge("recording");
-  setStatus("Cloud mode — speak in Urdu", true);
+  setStatus("Speak Urdu now — keep talking 2+ seconds", true);
   hideIosWarning();
 }
 
-function stopServerRecording() {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send("flush");
-    setTimeout(() => ws.send("stop"), 300);
-  }
-  cleanupAudio();
+async function stopServerRecording() {
   isRecording = false;
+  if (pcmProcessor) pcmProcessor.onaudioprocess = null;
+
+  if (ws?.readyState === WebSocket.OPEN) {
+    setStatus("Finishing…", true);
+    ws.send("flush");
+    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      ws.send("stop");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  cleanupAudio();
   resetMicUI();
-  setBadge("ready");
+  setBadge(serverReady ? "online" : "ready");
   setStatus("Stopped — tap mic to record again");
 }
 
@@ -471,7 +558,7 @@ async function toggleRecording() {
   }
 
   if (isRecording) {
-    if (useServerOnIOS) stopServerRecording();
+    if (useServerOnIOS) await stopServerRecording();
     else stopBrowserRecording();
     return;
   }
@@ -487,8 +574,8 @@ async function toggleRecording() {
       setStatus("Allow microphone access");
       showToast("Microphone permission required");
     } else if (useServerOnIOS) {
-      setStatus("Cannot reach cloud API");
-      showToast("Check speech-api URL in site settings");
+      setStatus(err.message || "Cannot reach cloud API");
+      showToast(err.message || "Server not ready — wait and retry");
     } else {
       setStatus("Could not start recording");
     }
@@ -529,12 +616,13 @@ function init() {
   if (useServerOnIOS) {
     hideIosWarning();
     setBadge("ready");
-    setStatus("iPhone cloud mode — tap mic, speak Urdu");
+    setStatus("Tap mic — speak Urdu for 2+ seconds per phrase");
     if (els.mobileHint) {
-      els.mobileHint.textContent = "iPhone uses cloud transcription (Whisper). First tap may take ~30s while server starts.";
+      els.mobileHint.textContent =
+        "iPhone cloud mode: first tap wakes server (~1 min). Then speak clearly in Urdu for at least 2 seconds, pause, repeat.";
       els.mobileHint.hidden = false;
     }
-    connectWebSocket().catch(() => setStatus("Connecting to cloud API…"));
+    wakeServer().catch(() => {});
     return;
   }
 
