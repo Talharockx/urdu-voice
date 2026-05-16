@@ -7,6 +7,7 @@ const els = {
   copyBtn: document.getElementById("copyBtn"),
   clearBtn: document.getElementById("clearBtn"),
   visualizer: document.getElementById("visualizer"),
+  mobileHint: document.getElementById("mobileHint"),
 };
 
 let isRecording = false;
@@ -16,9 +17,20 @@ let audioStream = null;
 let audioContext = null;
 let analyser = null;
 let animFrame = null;
+let pendingInterim = "";
+let langIndex = 0;
+let restartTimer = null;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSupported = Boolean(SpeechRecognition);
+
+const isIOS =
+  /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isMobile =
+  isIOS || /Android|webOS|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+
+const URDU_LANGS = ["ur-PK", "ur-IN", "ur", "hi-IN"];
 
 function setStatus(text, active = false) {
   els.statusText.textContent = text;
@@ -45,7 +57,7 @@ function showToast(message) {
   }
   toast.textContent = message;
   toast.classList.add("toast--visible");
-  setTimeout(() => toast.classList.remove("toast--visible"), 2200);
+  setTimeout(() => toast.classList.remove("toast--visible"), 2800);
 }
 
 function renderTranscript() {
@@ -92,7 +104,17 @@ function setInterim(text) {
   els.interimLine.textContent = text;
 }
 
+function commitPendingInterim() {
+  if (pendingInterim.trim()) {
+    appendText(pendingInterim);
+    pendingInterim = "";
+    setInterim("");
+  }
+}
+
 async function startVisualizer() {
+  if (isMobile) return;
+
   try {
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioContext = new AudioContext();
@@ -133,7 +155,7 @@ async function startVisualizer() {
     };
     draw();
   } catch {
-    /* visualizer optional */
+    /* optional */
   }
 }
 
@@ -149,56 +171,141 @@ function cleanupAudio() {
   ctx.clearRect(0, 0, els.visualizer.width, els.visualizer.height);
 }
 
-function startRecognition() {
-  if (!speechSupported) {
-    showToast("Use Chrome or Edge for Urdu speech");
-    return;
+function clearRestartTimer() {
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
   }
+}
 
-  speechRecognition = new SpeechRecognition();
-  speechRecognition.lang = "ur-PK";
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true;
-  speechRecognition.maxAlternatives = 1;
+function scheduleRestart() {
+  clearRestartTimer();
+  if (!isRecording) return;
+  restartTimer = setTimeout(() => {
+    if (!isRecording || !speechRecognition) return;
+    try {
+      speechRecognition.start();
+    } catch {
+      /* busy */
+    }
+  }, isIOS ? 400 : 200);
+}
 
+function createRecognition() {
+  const recognition = new SpeechRecognition();
+  recognition.lang = URDU_LANGS[langIndex];
+  recognition.continuous = !isMobile;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 3;
+  return recognition;
+}
+
+function bindRecognitionHandlers() {
   speechRecognition.onresult = (event) => {
     let interim = "";
     let final = "";
 
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
-      const text = result[0].transcript;
-      if (result.isFinal) final += text;
-      else interim += text;
+      const text = (result[0] && result[0].transcript) || "";
+      if (!text) continue;
+
+      if (result.isFinal) {
+        final += text;
+      } else {
+        interim += text;
+      }
     }
 
-    if (interim) setInterim(interim);
+    if (interim) {
+      pendingInterim = interim;
+      setInterim(interim);
+    }
+
     if (final) {
+      pendingInterim = "";
       setInterim("");
       appendText(final);
     }
   };
 
   speechRecognition.onerror = (event) => {
-    if (event.error !== "aborted") {
-      setStatus(`Error: ${event.error}`);
-      if (event.error === "not-allowed") {
-        showToast("Microphone permission required");
-      }
+    if (event.error === "aborted") return;
+
+    if (event.error === "not-allowed") {
+      setStatus("Allow microphone in browser settings");
+      showToast("Microphone permission required");
+      stopRecognition();
+      return;
     }
+
+    if (event.error === "language-not-supported" && langIndex < URDU_LANGS.length - 1) {
+      langIndex += 1;
+      showToast(`Trying language: ${URDU_LANGS[langIndex]}`);
+      restartRecognition();
+      return;
+    }
+
+    if (event.error === "no-speech" && isRecording) {
+      scheduleRestart();
+      return;
+    }
+
+    if (event.error === "network") {
+      setStatus("Internet required for speech on mobile");
+      showToast("Turn on Wi‑Fi or mobile data");
+      return;
+    }
+
+    setStatus(`Error: ${event.error}`);
   };
 
   speechRecognition.onend = () => {
-    if (isRecording) {
-      try {
-        speechRecognition.start();
-      } catch {
-        /* already started */
-      }
-    }
+    commitPendingInterim();
+    if (isRecording) scheduleRestart();
   };
 
-  speechRecognition.start();
+  speechRecognition.onspeechstart = () => {
+    setStatus("Listening — speak in Urdu", true);
+  };
+}
+
+function restartRecognition() {
+  if (!isRecording) return;
+  try {
+    speechRecognition?.stop();
+  } catch {
+    /* ignore */
+  }
+  speechRecognition = createRecognition();
+  bindRecognitionHandlers();
+  try {
+    speechRecognition.start();
+  } catch (err) {
+    console.error(err);
+    showToast("Could not restart — tap mic again");
+  }
+}
+
+function startRecognition() {
+  if (!speechSupported) {
+    showToast("Use Chrome on Android or desktop Chrome/Edge");
+    return;
+  }
+
+  langIndex = 0;
+  pendingInterim = "";
+  speechRecognition = createRecognition();
+  bindRecognitionHandlers();
+
+  try {
+    speechRecognition.start();
+  } catch (err) {
+    console.error(err);
+    showToast("Could not start — tap mic again");
+    return;
+  }
+
   isRecording = true;
   els.micBtn.classList.add("mic-btn--recording");
   els.micBtn.setAttribute("aria-pressed", "true");
@@ -206,17 +313,27 @@ function startRecognition() {
   els.micBtn.querySelector(".mic-icon").hidden = true;
   els.micBtn.querySelector(".stop-icon").hidden = false;
   setBadge("recording");
-  setStatus("Listening — speak in Urdu", true);
+  setStatus(
+    isMobile ? "Listening — speak clearly, pause between phrases" : "Listening — speak in Urdu",
+    true
+  );
   startVisualizer();
 }
 
 function stopRecognition() {
+  clearRestartTimer();
+  commitPendingInterim();
+
   if (speechRecognition) {
     speechRecognition.onend = null;
-    speechRecognition.stop();
+    try {
+      speechRecognition.stop();
+    } catch {
+      /* ignore */
+    }
     speechRecognition = null;
   }
-  setInterim("");
+
   isRecording = false;
   cleanupAudio();
   els.micBtn.classList.remove("mic-btn--recording");
@@ -230,7 +347,7 @@ function stopRecognition() {
 
 function toggleRecording() {
   if (!speechSupported) {
-    showToast("Use Chrome or Edge for Urdu speech");
+    showToast("Use Chrome on Android or desktop Chrome/Edge");
     return;
   }
   if (isRecording) stopRecognition();
@@ -251,6 +368,7 @@ els.copyBtn.addEventListener("click", async () => {
 
 els.clearBtn.addEventListener("click", () => {
   transcript = "";
+  pendingInterim = "";
   setInterim("");
   renderTranscript();
   setStatus("Transcript cleared");
@@ -258,15 +376,29 @@ els.clearBtn.addEventListener("click", () => {
 
 function init() {
   renderTranscript();
+
+  if (els.mobileHint) {
+    if (isIOS) {
+      els.mobileHint.textContent =
+        "iPhone: Use Safari or Chrome. Speak in short phrases. Urdu support may be limited on iOS.";
+      els.mobileHint.hidden = false;
+    } else if (isMobile) {
+      els.mobileHint.textContent =
+        "Mobile: Use Chrome, allow mic, stay online. Speak clearly in short Urdu phrases.";
+      els.mobileHint.hidden = false;
+    }
+  }
+
   if (speechSupported) {
     setBadge("ready");
-    setStatus("Ready — press the button to record");
+    setStatus(
+      isMobile ? "Ready — tap mic, allow access, speak in Urdu" : "Ready — press the button to record"
+    );
   } else {
     setBadge("unsupported");
-    setStatus("Use Chrome or Edge — speech API not available");
+    setStatus("Speech not supported — try Chrome on Android or desktop");
     els.micBtn.disabled = true;
   }
 }
 
 init();
-
