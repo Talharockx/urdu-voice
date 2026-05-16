@@ -372,7 +372,8 @@ body {
   margin-bottom: 0.5rem;
 }
 
-.ios-warning ol {
+.ios-warning ol,
+.ios-warning ul {
   margin: 0.5rem 0 0.75rem 1.1rem;
 }
 

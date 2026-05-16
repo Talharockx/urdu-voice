@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f766e" />
   <meta name="description" content="Real-time Urdu voice to text in your browser" />
+  <!-- After deploying API on Render, paste your URL here (no trailing slash): -->
+  <meta name="speech-api" content="" />
   <title>Urdu Voice to Text</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -53,16 +55,7 @@
         <p id="interimLine" class="interim-line" hidden></p>
       </section>
 
-      <section id="iosWarning" class="ios-warning" hidden aria-live="polite">
-        <p><strong>Chrome on iPhone cannot use voice typing.</strong></p>
-        <p>Apple blocks speech in Chrome. Open this site in <strong>Safari</strong> instead:</p>
-        <ol>
-          <li>Tap the <strong>Share</strong> button in Chrome</li>
-          <li>Choose <strong>Open in Safari</strong></li>
-          <li>Allow the microphone and tap the mic button</li>
-        </ol>
-        <button type="button" id="copyLinkBtn" class="btn btn--primary">Copy site link</button>
-      </section>
+      <section id="iosWarning" class="ios-warning" hidden aria-live="polite"></section>
 
       <section class="controls" aria-label="Controls">
         <div class="visualizer-wrap">
@@ -89,7 +82,7 @@
     </main>
 
     <footer class="footer">
-      <p>Desktop: Chrome or Edge · iPhone: Safari only · Android: Chrome</p>
+      <p>Desktop/Android: browser · iPhone: cloud mode (Whisper)</p>
     </footer>
   </div>
 
