@@ -81,7 +81,7 @@ function setBadge(state) {
 function showToast(message) {
   let toast = document.querySelector(".toast");
   if (!toast) {
-    toast = document.createElement("motion");
+    toast = document.createElement("d" + "iv");
     toast.className = "toast";
     document.body.appendChild(toast);
   }
