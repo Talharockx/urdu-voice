@@ -8,6 +8,8 @@ const els = {
   clearBtn: document.getElementById("clearBtn"),
   visualizer: document.getElementById("visualizer"),
   mobileHint: document.getElementById("mobileHint"),
+  iosWarning: document.getElementById("iosWarning"),
+  copyLinkBtn: document.getElementById("copyLinkBtn"),
 };
 
 let isRecording = false;
@@ -22,13 +24,20 @@ let langIndex = 0;
 let restartTimer = null;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const speechSupported = Boolean(SpeechRecognition);
 
 const isIOS =
   /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isIOSSafari =
+  isIOS &&
+  /Safari/i.test(navigator.userAgent) &&
+  !/CriOS|FxiOS|EdgiOS|OPiOS|mercury/i.test(navigator.userAgent);
+const isIOSChrome = isIOS && /CriOS/i.test(navigator.userAgent);
+const isIOSBlockedBrowser = isIOS && !isIOSSafari;
 const isMobile =
   isIOS || /Android|webOS|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+
+const speechSupported = Boolean(SpeechRecognition) && !isIOSBlockedBrowser;
 
 const URDU_LANGS = ["ur-PK", "ur-IN", "ur", "hi-IN"];
 
@@ -257,6 +266,12 @@ function bindRecognitionHandlers() {
       return;
     }
 
+    if (event.error === "service-not-allowed") {
+      stopRecognition();
+      showIOSChromeHelp();
+      return;
+    }
+
     setStatus(`Error: ${event.error}`);
   };
 
@@ -345,7 +360,18 @@ function stopRecognition() {
   setStatus("Stopped — tap mic to record again");
 }
 
+function showIOSChromeHelp() {
+  setBadge("unsupported");
+  setStatus("Open this site in Safari (not Chrome on iPhone)");
+  showToast("Chrome on iPhone cannot use speech");
+  if (els.iosWarning) els.iosWarning.hidden = false;
+}
+
 function toggleRecording() {
+  if (isIOSBlockedBrowser) {
+    showIOSChromeHelp();
+    return;
+  }
   if (!speechSupported) {
     showToast("Use Chrome on Android or desktop Chrome/Edge");
     return;
@@ -374,13 +400,28 @@ els.clearBtn.addEventListener("click", () => {
   setStatus("Transcript cleared");
 });
 
+els.copyLinkBtn?.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    showToast("Link copied — paste in Safari");
+  } catch {
+    showToast(window.location.href);
+  }
+});
+
 function init() {
   renderTranscript();
 
+  if (isIOSBlockedBrowser) {
+    showIOSChromeHelp();
+    els.micBtn.disabled = true;
+    return;
+  }
+
   if (els.mobileHint) {
-    if (isIOS) {
+    if (isIOSSafari) {
       els.mobileHint.textContent =
-        "iPhone: Use Safari or Chrome. Speak in short phrases. Urdu support may be limited on iOS.";
+        "iPhone Safari: Speak in short Urdu phrases. Stay online. Urdu support may vary.";
       els.mobileHint.hidden = false;
     } else if (isMobile) {
       els.mobileHint.textContent =
