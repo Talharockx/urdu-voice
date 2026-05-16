@@ -53,6 +53,17 @@
         <p id="interimLine" class="interim-line" hidden></p>
       </section>
 
+      <section id="iosWarning" class="ios-warning" hidden aria-live="polite">
+        <p><strong>Chrome on iPhone cannot use voice typing.</strong></p>
+        <p>Apple blocks speech in Chrome. Open this site in <strong>Safari</strong> instead:</p>
+        <ol>
+          <li>Tap the <strong>Share</strong> button in Chrome</li>
+          <li>Choose <strong>Open in Safari</strong></li>
+          <li>Allow the microphone and tap the mic button</li>
+        </ol>
+        <button type="button" id="copyLinkBtn" class="btn btn--primary">Copy site link</button>
+      </section>
+
       <section class="controls" aria-label="Controls">
         <div class="visualizer-wrap">
           <canvas id="visualizer" aria-hidden="true"></canvas>
