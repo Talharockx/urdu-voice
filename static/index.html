@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="description" content="Real-time Urdu voice to text in your browser" />
+  <title>Urdu Voice to Text</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="header">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" x2="12" y1="19" y2="22"/>
+        </svg>
+      </div>
+      <div class="header-text">
+        <h1>Urdu Voice to Text</h1>
+        <p class="subtitle">Real-time accurate Urdu transcription</p>
+      </div>
+      <span id="statusBadge" class="badge badge--online">Ready</span>
+    </header>
+
+    <main class="main">
+      <section class="transcript-panel" aria-label="Transcript">
+        <div class="panel-header">
+          <h2>Transcript</h2>
+          <div class="panel-actions">
+            <button type="button" id="copyBtn" class="btn btn--ghost" title="Copy transcript" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <span>Copy</span>
+            </button>
+            <button type="button" id="clearBtn" class="btn btn--ghost" title="Clear transcript" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              <span>Clear</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="transcriptBox" class="transcript-box" aria-live="polite" aria-atomic="false">
+          <p class="placeholder">Press the microphone and start speaking in Urdu…</p>
+        </div>
+
+        <p id="interimLine" class="interim-line" hidden></p>
+      </section>
+
+      <section class="controls" aria-label="Controls">
+        <div class="visualizer-wrap">
+          <canvas id="visualizer" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="mic-row">
+          <button type="button" id="micBtn" class="mic-btn" aria-label="Start recording" aria-pressed="false">
+            <span class="mic-btn__ring"></span>
+            <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+            <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor" hidden>
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
+        </div>
+
+        <p id="statusText" class="status-text">Ready — press the button to record</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Browser speech recognition · Chrome or Edge recommended</p>
+    </footer>
+  </div>
+
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>
